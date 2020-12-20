@@ -37,18 +37,19 @@ def train(model, train_set, val_set, lr, weight_decay,
     device = next(model.parameters()).device
 
     train_loader = torch.utils.data.DataLoader(
-            dataset=train_set,
-            sampler=torch.utils.data.BatchSampler(
-                torch.utils.data.SequentialSampler(train_set),
-                batch_size=batch_size, drop_last=False
-            ),
-            batch_size=None,
-            num_workers=0,
+        dataset=train_set,
+        sampler=torch.utils.data.BatchSampler(
+            torch.utils.data.SequentialSampler(train_set),
+            batch_size=batch_size, drop_last=False
+        ),
+        batch_size=None,
+        num_workers=0,
     )
     step = 0
     best_loss = np.inf
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=lr, weight_decay=weight_decay)
 
     loss_hist = {'train': [], 'val': []}
     acc_hist = {'train': [], 'val': []}
@@ -63,7 +64,8 @@ def train(model, train_set, val_set, lr, weight_decay,
         for xbs, yb in train_loader:
             xbs, yb = [xb.to(device) for xb in xbs], yb.to(device)
 
-            loss_batch, ncorr_batch = run_batch(model, xbs, yb, optimizer, train=True)
+            loss_batch, ncorr_batch = run_batch(
+                model, xbs, yb, optimizer, train=True)
             loss += loss_batch
             ncorrect += ncorr_batch
             nsamples += yb.shape[0]
@@ -71,8 +73,8 @@ def train(model, train_set, val_set, lr, weight_decay,
             step += 1
             if step % eval_step == 0:
                 # update train stats
-                train_loss = loss / nsamples
-                train_acc = ncorrect / nsamples
+                train_loss = loss / float(nsamples)
+                train_acc = ncorrect / float(nsamples)
 
                 loss_hist['train'].append(train_loss)
                 acc_hist['train'].append(train_acc)
@@ -82,11 +84,13 @@ def train(model, train_set, val_set, lr, weight_decay,
 
                 if val_set is not None:
                     # update val stats
-                    rnd_idx = np.random.choice(len(val_set))[:batch_mult_val * batch_size]
+                    rnd_idx = np.random.choice(len(val_set))[
+                        :batch_mult_val * batch_size]
                     xbs, yb = val_set[rnd_idx]
                     xbs, yb = [xb.to(device) for xb in xbs], yb.to(device)
-                    val_loss, val_ncorr = run_batch(model, xbs, yb, None, train=False)
-                    val_acc = val_ncorr / (batch_mult_val * batch_size)
+                    val_loss, val_ncorr = run_batch(
+                        model, xbs, yb, None, train=False)
+                    val_acc = val_ncorr // (batch_mult_val * batch_size)
 
                     loss_hist['val'].append(val_loss)
                     acc_hist['val'].append(val_acc)
@@ -94,21 +98,23 @@ def train(model, train_set, val_set, lr, weight_decay,
                         ex.current_run.info['val']['loss'].append(val_loss)
                         ex.current_run.info['val']['acc'].append(val_acc)
 
-                    logging.info(f"Epoch {epoch}, step {step}: train {train_loss:.5f}, val {val_loss:.5f}")
+                    logging.info(
+                        f"Epoch {epoch}, step {step}: train {train_loss:.5f}, val {val_loss:.5f}")
 
                     if val_loss < best_loss:
                         best_loss = val_loss
                         best_epoch = epoch
                         best_state = {
-                                key: value.cpu() for key, value
-                                in model.state_dict().items()
+                            key: value.cpu() for key, value
+                            in model.state_dict().items()
                         }
                     # early stop only if this variable is set to True
                     elif early_stop and epoch >= best_epoch + patience:
                         model.load_state_dict(best_state)
                         return epoch + 1, loss_hist, acc_hist
                 else:
-                    logging.info(f"Epoch {epoch}, step {step}: train {train_loss:.5f}")
+                    logging.info(
+                        f"Epoch {epoch}, step {step}: train {train_loss:.5f}")
     if val_set is not None:
         model.load_state_dict(best_state)
     return epoch + 1, loss_hist, acc_hist

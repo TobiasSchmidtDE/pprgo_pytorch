@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torch_scatter import scatter
 
 from .pytorch_utils import MixedDropout, MixedLinear
+from rgnn_at_scale.aggregation import ROBUST_MEANS, chunked_message_and_aggregate
 
 
 class PPRGoMLP(nn.Module):
@@ -28,10 +29,26 @@ class PPRGoMLP(nn.Module):
 class PPRGo(nn.Module):
     def __init__(self, num_features, num_classes, hidden_size, nlayers, dropout):
         super().__init__()
-        self.mlp = PPRGoMLP(num_features, num_classes, hidden_size, nlayers, dropout)
+        self.mlp = PPRGoMLP(num_features, num_classes,
+                            hidden_size, nlayers, dropout)
 
     def forward(self, X, ppr_scores, ppr_idx):
+        """
+        Parameters: 
+            X: torch.SparseTensor of shape (num_ppr_nodes, num_features)
+                The node features for all nodes which were assigned a ppr score
+            ppr_scores: torch.Tensor of shape (num_ppr_nodes)
+                The ppr scores are calculate for every node of the batch individually.
+                This tensor contains these concatenated ppr scores for every node in the batch.
+            ppr_idx: torch.Tensor of shape (num_ppr_nodes)
+                The id of the batch that the corresponding ppr_score entry belongs to
+
+        Returns: 
+            propagated_logits: torch.Tensor of shape (batch_size, num_classes)
+
+        """
+        # logits of shape (num_batch_nodes, num_classes)
         logits = self.mlp(X)
         propagated_logits = scatter(logits * ppr_scores[:, None], ppr_idx[:, None],
-                                    dim=0, dim_size=ppr_idx[-1] + 1, reduce='sum')
+                                    dim=0, dim_size=ppr_idx[-1] + 1, reduce='mean')
         return propagated_logits
