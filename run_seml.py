@@ -20,13 +20,14 @@ def config():
     overwrite = None
     db_collection = None
     if db_collection is not None:
-        ex.observers.append(seml.create_mongodb_observer(db_collection, overwrite=overwrite))
+        ex.observers.append(seml.create_mongodb_observer(
+            db_collection, overwrite=overwrite))
 
 
 @ex.automain
 def run(data_dir, data_fname, split_seed, ntrain_div_classes, attr_normalization,
         alpha, eps, topk, ppr_normalization,
-        hidden_size, nlayers, weight_decay, dropout,
+        hidden_size, nlayers, weight_decay, dropout, aggr,
         lr, max_epochs, batch_size, batch_mult_val,
         eval_step, run_val,
         early_stop, patience,
@@ -62,6 +63,11 @@ def run(data_dir, data_fname, split_seed, ntrain_div_classes, attr_normalization
         Weight decay used for training the MLP.
     dropout:
         Dropout used for training.
+    aggr:
+        Name of the aggregation function to use for propagation step:
+            - sum
+            - mean
+            - max
     lr:
         Learning rate.
     max_epochs:
@@ -84,14 +90,15 @@ def run(data_dir, data_fname, split_seed, ntrain_div_classes, attr_normalization
         Fraction of nodes for which local predictions are computed during inference.
     '''
     torch.manual_seed(0)
-
+    print(batch_size)
+    print(type(batch_size))
     start = time.time()
     (adj_matrix, attr_matrix, labels,
      train_idx, val_idx, test_idx) = utils.get_data(
-            f"{data_dir}/{data_fname}",
-            seed=split_seed,
-            ntrain_div_classes=ntrain_div_classes,
-            normalize_attr=attr_normalization
+        f"{data_dir}/{data_fname}",
+        seed=split_seed,
+        ntrain_div_classes=ntrain_div_classes,
+        normalize_attr=attr_normalization
     )
     try:
         d = attr_matrix.n_columns
@@ -105,56 +112,59 @@ def run(data_dir, data_fname, split_seed, ntrain_div_classes, attr_normalization
     start = time.time()
     topk_train = ppr.topk_ppr_matrix(adj_matrix, alpha, eps, train_idx, topk,
                                      normalization=ppr_normalization)
-    train_set = PPRDataset(attr_matrix_all=attr_matrix, ppr_matrix=topk_train, indices=train_idx, labels_all=labels)
+    train_set = PPRDataset(attr_matrix_all=attr_matrix,
+                           ppr_matrix=topk_train, indices=train_idx, labels_all=labels)
     if run_val:
         topk_val = ppr.topk_ppr_matrix(adj_matrix, alpha, eps, val_idx, topk,
                                        normalization=ppr_normalization)
-        val_set = PPRDataset(attr_matrix_all=attr_matrix, ppr_matrix=topk_val, indices=val_idx, labels_all=labels)
+        val_set = PPRDataset(attr_matrix_all=attr_matrix,
+                             ppr_matrix=topk_val, indices=val_idx, labels_all=labels)
     else:
         val_set = None
     time_preprocessing = time.time() - start
     logging.info('Preprocessing done.')
 
     start = time.time()
-    model = PPRGo(d, nc, hidden_size, nlayers, dropout)
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model = PPRGo(d, nc, hidden_size, nlayers, dropout, aggr=aggr)
+    device = torch.device(
+        'cuda') if torch.cuda.is_available() else torch.device('cpu')
     model.to(device)
 
     nepochs, _, _ = train(
-            model=model, train_set=train_set, val_set=val_set,
-            lr=lr, weight_decay=weight_decay,
-            max_epochs=max_epochs, batch_size=batch_size, batch_mult_val=batch_mult_val,
-            eval_step=eval_step, early_stop=early_stop, patience=patience,
-            ex=ex)
+        model=model, train_set=train_set, val_set=val_set,
+        lr=lr, weight_decay=weight_decay,
+        max_epochs=max_epochs, batch_size=batch_size, batch_mult_val=batch_mult_val,
+        eval_step=eval_step, early_stop=early_stop, patience=patience,
+        ex=ex)
     time_training = time.time() - start
     logging.info('Training done.')
 
     start = time.time()
     predictions, time_logits, time_propagation = predict(
-            model=model, adj_matrix=adj_matrix, attr_matrix=attr_matrix, alpha=alpha,
-            nprop=nprop_inference, inf_fraction=inf_fraction,
-            ppr_normalization=ppr_normalization)
+        model=model, adj_matrix=adj_matrix, attr_matrix=attr_matrix, alpha=alpha,
+        nprop=nprop_inference, inf_fraction=inf_fraction,
+        ppr_normalization=ppr_normalization)
     time_inference = time.time() - start
     logging.info('Inference done.')
 
     results = {
-            'accuracy_train': 100 * accuracy_score(labels[train_idx], predictions[train_idx]),
-            'accuracy_val': 100 * accuracy_score(labels[val_idx], predictions[val_idx]),
-            'accuracy_test': 100 * accuracy_score(labels[test_idx], predictions[test_idx]),
-            'f1_train': f1_score(labels[train_idx], predictions[train_idx], average='macro'),
-            'f1_val': f1_score(labels[val_idx], predictions[val_idx], average='macro'),
-            'f1_test': f1_score(labels[test_idx], predictions[test_idx], average='macro'),
+        'accuracy_train': 100 * accuracy_score(labels[train_idx], predictions[train_idx]),
+        'accuracy_val': 100 * accuracy_score(labels[val_idx], predictions[val_idx]),
+        'accuracy_test': 100 * accuracy_score(labels[test_idx], predictions[test_idx]),
+        'f1_train': f1_score(labels[train_idx], predictions[train_idx], average='macro'),
+        'f1_val': f1_score(labels[val_idx], predictions[val_idx], average='macro'),
+        'f1_test': f1_score(labels[test_idx], predictions[test_idx], average='macro'),
     }
 
     results.update({
-            'time_loading': time_loading,
-            'time_preprocessing': time_preprocessing,
-            'time_training': time_training,
-            'time_inference': time_inference,
-            'time_logits': time_logits,
-            'time_propagation': time_propagation,
-            'gpu_memory': torch.cuda.max_memory_allocated(),
-            'memory': utils.get_max_memory_bytes(),
-            'nepochs': nepochs,
+        'time_loading': time_loading,
+        'time_preprocessing': time_preprocessing,
+        'time_training': time_training,
+        'time_inference': time_inference,
+        'time_logits': time_logits,
+        'time_propagation': time_propagation,
+        'gpu_memory': torch.cuda.max_memory_allocated(),
+        'memory': utils.get_max_memory_bytes(),
+        'nepochs': nepochs,
     })
     return results

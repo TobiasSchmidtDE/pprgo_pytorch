@@ -54,8 +54,9 @@ def train(model, train_set, val_set, lr, weight_decay,
     loss_hist = {'train': [], 'val': []}
     acc_hist = {'train': [], 'val': []}
     if ex is not None:
-        ex.current_run.info['train'] = {'loss': [], 'acc': []}
-        ex.current_run.info['val'] = {'loss': [], 'acc': []}
+        if ex.current_run is not None:
+            ex.current_run.info['train'] = {'loss': [], 'acc': []}
+            ex.current_run.info['val'] = {'loss': [], 'acc': []}
 
     loss = 0
     ncorrect = 0
@@ -79,8 +80,9 @@ def train(model, train_set, val_set, lr, weight_decay,
                 loss_hist['train'].append(train_loss)
                 acc_hist['train'].append(train_acc)
                 if ex is not None:
-                    ex.current_run.info['train']['loss'].append(train_loss)
-                    ex.current_run.info['train']['acc'].append(train_acc)
+                    if ex.current_run is not None:
+                        ex.current_run.info['train']['loss'].append(train_loss)
+                        ex.current_run.info['train']['acc'].append(train_acc)
 
                 if val_set is not None:
                     # update val stats
@@ -95,8 +97,9 @@ def train(model, train_set, val_set, lr, weight_decay,
                     loss_hist['val'].append(val_loss)
                     acc_hist['val'].append(val_acc)
                     if ex is not None:
-                        ex.current_run.info['val']['loss'].append(val_loss)
-                        ex.current_run.info['val']['acc'].append(val_acc)
+                        if ex.current_run is not None:
+                            ex.current_run.info['val']['loss'].append(val_loss)
+                            ex.current_run.info['val']['acc'].append(val_acc)
 
                     logging.info(
                         f"Epoch {epoch}, step {step}: train {train_loss:.5f}, val {val_loss:.5f}")

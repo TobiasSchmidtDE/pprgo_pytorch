@@ -27,10 +27,11 @@ class PPRGoMLP(nn.Module):
 
 
 class PPRGo(nn.Module):
-    def __init__(self, num_features, num_classes, hidden_size, nlayers, dropout):
+    def __init__(self, num_features, num_classes, hidden_size, nlayers, dropout, aggr="sum"):
         super().__init__()
         self.mlp = PPRGoMLP(num_features, num_classes,
                             hidden_size, nlayers, dropout)
+        self.aggr = aggr
 
     def forward(self, X, ppr_scores, ppr_idx):
         """
@@ -50,5 +51,5 @@ class PPRGo(nn.Module):
         # logits of shape (num_batch_nodes, num_classes)
         logits = self.mlp(X)
         propagated_logits = scatter(logits * ppr_scores[:, None], ppr_idx[:, None],
-                                    dim=0, dim_size=ppr_idx[-1] + 1, reduce='mean')
+                                    dim=0, dim_size=ppr_idx[-1] + 1, reduce=self.aggr)
         return propagated_logits

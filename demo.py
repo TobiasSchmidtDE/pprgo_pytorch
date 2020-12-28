@@ -157,7 +157,7 @@ print(f"Runtime: {time_preprocessing:.2f}s")
 
 
 start = time.time()
-model = PPRGo(d, nc, hidden_size, nlayers, dropout)
+model = PPRGo(d, nc, hidden_size, nlayers, dropout, aggr="mean")
 device = torch.device(
     'cuda') if torch.cuda.is_available() else torch.device('cpu')
 model.to(device)

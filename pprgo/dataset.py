@@ -33,7 +33,7 @@ class PPRDataset(torch.utils.data.Dataset):
         Returns:
             A touple (data, labels), where
                 data: touple of
-                    - attr_matrix_all: torch.SparseTensor of shape (ppr_num_nonzeros, num_features)
+                    - attr_matrix: torch.SparseTensor of shape (ppr_num_nonzeros, num_features)
                         The node features of all neighboring nodes of the training nodes in 
                         the graph derived from the Personal Page Rank as specified by idx
                     - ppr_scores: torch.Tensor of shape (ppr_num_nonzeros)
