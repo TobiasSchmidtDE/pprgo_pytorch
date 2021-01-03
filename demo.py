@@ -1,6 +1,4 @@
-# In[2]:
-
-
+# %%
 import os
 import time
 import logging
@@ -9,17 +7,30 @@ import ast
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 import torch
-
+from torch_sparse import SparseTensor
 from pprgo import utils, ppr
-from pprgo.pprgo import PPRGo
+from pprgo.pprgo import PPRGo, RobustPPRGo
 from pprgo.train import train
 from pprgo.predict import predict
-from pprgo.dataset import PPRDataset
+from pprgo.dataset import PPRDataset, RobustPPRDataset
+from pprgo.pytorch_utils import matrix_to_torch
 
 
-# In[2]:
+# %%
+model_type = "RobustPPRGO"
 
 
+# %%
+# choose dataset class
+if model_type == "RobustPPRGO":
+    DatasetClass = RobustPPRDataset
+    ModelClass = RobustPPRGo
+else:
+    DatasetClass = PPRDataset
+    ModelClass = PPRGo
+
+
+# %%
 # Set up logging
 logger = logging.getLogger()
 logger.handlers = []
@@ -31,28 +42,21 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 logger.setLevel('INFO')
 
-
+# %% [markdown]
 # # Download dataset
 
-# In[3]:
+# %%
+#!wget --show-progress -O data/reddit.npz https://ndownloader.figshare.com/files/23742119
 
-
-# get_ipython().system(
-#    'wget --show-progress -O data/reddit.npz https://ndownloader.figshare.com/files/23742119')
-
-
+# %% [markdown]
 # # Load config
 
-# In[4]:
-
-
+# %%
 with open('config_demo.yaml', 'r') as c:
     config = yaml.safe_load(c)
 
 
-# In[5]:
-
-
+# %%
 # For strings that yaml doesn't parse (e.g. None)
 for key, val in config.items():
     if type(val) is str:
@@ -62,9 +66,7 @@ for key, val in config.items():
             pass
 
 
-# In[6]:
-
-
+# %%
 data_file = config['data_file']           # Path to the .npz data file
 # Seed for splitting the dataset into train/val/test
 split_seed = config['split_seed']
@@ -81,7 +83,7 @@ topk = config['topk']                # Number of PPR neighbors for each node
 ppr_normalization = config['ppr_normalization']
 
 hidden_size = config['hidden_size']         # Size of the MLP's hidden layer
-nlayers = config['nlayers']             # Number of MLP layers
+nlayers = config['nlayers']            # Number of MLP layers
 # Weight decay used for training the MLP
 weight_decay = config['weight_decay']
 dropout = config['dropout']             # Dropout used for training
@@ -106,12 +108,10 @@ nprop_inference = config['nprop_inference']
 # Fraction of nodes for which local predictions are computed during inference
 inf_fraction = config['inf_fraction']
 
-
+# %% [markdown]
 # # Load the data
 
-# In[7]:
-
-
+# %%
 start = time.time()
 (adj_matrix, attr_matrix, labels,
  train_idx, val_idx, test_idx) = utils.get_data(
@@ -129,35 +129,55 @@ time_loading = time.time() - start
 print(f"Runtime: {time_loading:.2f}s")
 
 
+# %%
+len(train_idx)
+
+# %% [markdown]
 # # Preprocessing: Calculate PPR scores
 
-# In[8]:
-
-
+# %%
 # compute the ppr vectors for train/val nodes using ACL's ApproximatePR
 start = time.time()
 topk_train = ppr.topk_ppr_matrix(adj_matrix, alpha, eps, train_idx, topk,
                                  normalization=ppr_normalization)
-train_set = PPRDataset(attr_matrix_all=attr_matrix,
-                       ppr_matrix=topk_train, indices=train_idx, labels_all=labels)
+train_set = DatasetClass(attr_matrix_all=attr_matrix,
+                         ppr_matrix=topk_train, indices=train_idx, labels_all=labels)
 if run_val:
     topk_val = ppr.topk_ppr_matrix(adj_matrix, alpha, eps, val_idx, topk,
                                    normalization=ppr_normalization)
-    val_set = PPRDataset(attr_matrix_all=attr_matrix,
-                         ppr_matrix=topk_val, indices=val_idx, labels_all=labels)
+    val_set = DatasetClass(attr_matrix_all=attr_matrix,
+                           ppr_matrix=topk_val, indices=val_idx, labels_all=labels)
 else:
     val_set = None
 time_preprocessing = time.time() - start
 print(f"Runtime: {time_preprocessing:.2f}s")
 
 
+# %%
+len(train_set)
+
+
+# %%
+train_loader = torch.utils.data.DataLoader(
+    dataset=train_set,
+    sampler=torch.utils.data.BatchSampler(
+        torch.utils.data.SequentialSampler(train_set),
+        batch_size=64, drop_last=False
+    ),
+    batch_size=None,
+    num_workers=0,
+)
+
+
+# %%
+
+
+# %% [markdown]
 # # Training: Set up model and train
 
-# In[10]:
-
-
+# %%
 start = time.time()
-model = PPRGo(d, nc, hidden_size, nlayers, dropout, aggr="mean")
+model = ModelClass(d, nc, hidden_size, nlayers, dropout, aggr="mean")
 device = torch.device(
     'cuda') if torch.cuda.is_available() else torch.device('cpu')
 model.to(device)
@@ -171,12 +191,10 @@ time_training = time.time() - start
 logging.info('Training done.')
 print(f"Runtime: {time_training:.2f}s")
 
-
+# %% [markdown]
 # # Inference (val and test)
 
-# In[11]:
-
-
+# %%
 start = time.time()
 predictions, time_logits, time_propagation = predict(
     model=model, adj_matrix=adj_matrix, attr_matrix=attr_matrix, alpha=alpha,
@@ -185,12 +203,10 @@ predictions, time_logits, time_propagation = predict(
 time_inference = time.time() - start
 print(f"Runtime: {time_inference:.2f}s")
 
-
+# %% [markdown]
 # # Collect and print results
 
-# In[12]:
-
-
+# %%
 acc_train = 100 * accuracy_score(labels[train_idx], predictions[train_idx])
 acc_val = 100 * accuracy_score(labels[val_idx], predictions[val_idx])
 acc_test = 100 * accuracy_score(labels[test_idx], predictions[test_idx])
@@ -204,9 +220,7 @@ memory = utils.get_max_memory_bytes()
 time_total = time_preprocessing + time_training + time_inference
 
 
-# In[13]:
-
-
+# %%
 print(f'''
 Accuracy: Train: {acc_train:.1f}%, val: {acc_val:.1f}%, test: {acc_test:.1f}%
 F1 score: Train: {f1_train:.3f}, val: {f1_val:.3f}, test: {f1_test:.3f}
@@ -216,4 +230,7 @@ Memory: Main: {memory / 2**30:.2f}GB, GPU: {gpu_memory / 2**30:.3f}GB
 ''')
 
 
-# In[ ]:
+# %%
+
+
+# %%
