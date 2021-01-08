@@ -1,5 +1,7 @@
 # %%
 import os
+#os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+# CUDA_LAUNCH_BLOCKING="1"
 import time
 import logging
 import yaml
@@ -11,7 +13,7 @@ from torch_sparse import SparseTensor
 from pprgo import utils, ppr
 from pprgo.pprgo import PPRGo, RobustPPRGo
 from pprgo.train import train
-from pprgo.predict import predict
+from pprgo.predict import predict_power_iter, predict_batched
 from pprgo.dataset import PPRDataset, RobustPPRDataset
 from pprgo.pytorch_utils import matrix_to_torch
 
@@ -66,8 +68,12 @@ for key, val in config.items():
             pass
 
 
-# %%
-data_file = config['data_file']           # Path to the .npz data file
+# Path to the .npz data file
+data_file = "/nfs/shared/data/mag_large_filtered_06_09_fine_standardized.npz"
+#data_file = "/nfs/shared/data/cora_ml.npz"
+#data_file = "/nfs/shared/data/reddit.npz"
+# Seed for splitting the dataset into train/val/test
+split_seed = config['split_seed']
 # Seed for splitting the dataset into train/val/test
 split_seed = config['split_seed']
 # Number of training nodes divided by number of classes
@@ -90,8 +96,9 @@ dropout = config['dropout']             # Dropout used for training
 
 lr = config['lr']                  # Learning rate
 # Maximum number of epochs (exact number if no early stopping)
-max_epochs = config['max_epochs']
+max_epochs = 1
 batch_size = config['batch_size']          # Batch size for training
+pred_batch_size = 512
 # Multiplier for validation batch size
 batch_mult_val = config['batch_mult_val']
 
@@ -195,16 +202,62 @@ print(f"Runtime: {time_training:.2f}s")
 # # Inference (val and test)
 
 # %%
-start = time.time()
-predictions, time_logits, time_propagation = predict(
-    model=model, adj_matrix=adj_matrix, attr_matrix=attr_matrix, alpha=alpha,
-    nprop=nprop_inference, inf_fraction=inf_fraction,
-    ppr_normalization=ppr_normalization)
-time_inference = time.time() - start
-print(f"Runtime: {time_inference:.2f}s")
+time_logits = None
+time_propagation = None
+time_inference_preprocessing = None
+time_inference_prediction = None
 
-# %% [markdown]
-# # Collect and print results
+start = time.time()
+# the power iteration prediction method does not scale well
+# make sure it's only used with relatively small graphs
+if isinstance(model, PPRGo):
+    predictions, time_logits, time_propagation = predict_power_iter(
+        model=model,
+        adj_matrix=adj_matrix,
+        attr_matrix=attr_matrix,
+        alpha=alpha,
+        nprop=nprop_inference,
+        inf_fraction=inf_fraction,
+        ppr_normalization=ppr_normalization,
+        batch_size_logits=pred_batch_size)
+else:
+    predictions, time_inference_preprocessing, time_inference_prediction = predict_batched(
+        model=model,
+        dataset_class=DatasetClass,
+        adj_matrix=adj_matrix,
+        attr_matrix=attr_matrix,
+        labels=labels,
+        alpha=alpha,
+        ppr_normalization=ppr_normalization,
+        eps=eps,
+        topk=topk,
+        batch_size=pred_batch_size)
+
+time_inference = time.time() - start
+logging.info('Inference done.')
+
+results = {
+    'accuracy_train': 100 * accuracy_score(labels[train_idx], predictions[train_idx]),
+    'accuracy_val': 100 * accuracy_score(labels[val_idx], predictions[val_idx]),
+    'accuracy_test': 100 * accuracy_score(labels[test_idx], predictions[test_idx]),
+    'f1_train': f1_score(labels[train_idx], predictions[train_idx], average='macro'),
+    'f1_val': f1_score(labels[val_idx], predictions[val_idx], average='macro'),
+    'f1_test': f1_score(labels[test_idx], predictions[test_idx], average='macro'),
+}
+
+results.update({
+    'time_loading': time_loading,
+    'time_preprocessing': time_preprocessing,
+    'time_training': time_training,
+    'time_inference': time_inference,
+    'time_logits': time_logits,
+    'time_propagation': time_propagation,
+    'time_inference_preprocessing': time_inference_preprocessing,
+    'time_inference_prediction': time_inference_prediction,
+    'gpu_memory': torch.cuda.max_memory_allocated(),
+    'memory': utils.get_max_memory_bytes(),
+    'nepochs': nepochs,
+})
 
 # %%
 acc_train = 100 * accuracy_score(labels[train_idx], predictions[train_idx])

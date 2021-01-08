@@ -4,7 +4,12 @@ from .pytorch_utils import matrix_to_torch
 
 
 class PPRDataset(torch.utils.data.Dataset):
-    def __init__(self, attr_matrix_all, ppr_matrix, indices, labels_all=None):
+    def __init__(self,
+                 attr_matrix_all,
+                 ppr_matrix,
+                 indices,
+                 labels_all=None,
+                 allow_cache=True):
         """
         Parameters:
             attr_matrix_all: np.ndarray of shape (num_nodes, num_features)
@@ -20,6 +25,7 @@ class PPRDataset(torch.utils.data.Dataset):
         self.ppr_matrix = ppr_matrix
         self.indices = indices
         self.labels_all = torch.tensor(labels_all)
+        self.allow_cache = allow_cache
         self.cached = {}
 
     def __len__(self):
@@ -58,7 +64,8 @@ class PPRDataset(torch.utils.data.Dataset):
             # shape (ppr_num_nonzeros)
             ppr_scores = ppr_matrix.data
 
-            attr_matrix = matrix_to_torch(self.attr_matrix_all[neighbor_idx])
+            attr_matrix = matrix_to_torch(
+                self.attr_matrix_all[neighbor_idx])
             ppr_scores = torch.tensor(ppr_scores, dtype=torch.float32)
             source_idx = torch.tensor(source_idx, dtype=torch.long)
 
@@ -66,12 +73,20 @@ class PPRDataset(torch.utils.data.Dataset):
                 labels = None
             else:
                 labels = self.labels_all[self.indices[idx]]
-            self.cached[key] = ((attr_matrix, ppr_scores, source_idx), labels)
+
+            batch = ((attr_matrix, ppr_scores, source_idx),
+                     labels.to(torch.long))
+
+            if self.allow_cache:
+                self.cached[key] = batch
+            else:
+                return batch
+
         return self.cached[key]
 
 
 class RobustPPRDataset(torch.utils.data.Dataset):
-    def __init__(self, attr_matrix_all, ppr_matrix, indices, labels_all=None):
+    def __init__(self, attr_matrix_all, ppr_matrix, indices, labels_all=None, allow_cache=True):
         """
         Parameters:
             attr_matrix_all: np.ndarray of shape (num_nodes, num_features)
@@ -87,6 +102,7 @@ class RobustPPRDataset(torch.utils.data.Dataset):
         self.ppr_matrix = ppr_matrix
         self.indices = indices
         self.labels_all = torch.tensor(labels_all)
+        self.allow_cache = allow_cache
         self.cached = {}
 
     def __len__(self):
@@ -95,8 +111,8 @@ class RobustPPRDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         """
         Parameters:
-            idx: List[Int] of shape (batch_size)
-                The ids of the indicies array that point to the training nodes
+            idx: np.ndarray of shape (batch_size)
+                The node indices to retrieve for the batch
         Returns:
             A touple (data, labels), where
                 data: touple of
@@ -126,5 +142,12 @@ class RobustPPRDataset(torch.utils.data.Dataset):
                 labels = None
             else:
                 labels = self.labels_all[self.indices[idx]]
-            self.cached[key] = ((attr_matrix, ppr_matrix), labels)
+
+            batch = ((attr_matrix, ppr_matrix), labels.to(torch.long))
+
+            if self.allow_cache:
+                self.cached[key] = batch
+            else:
+                return batch
+
         return self.cached[key]

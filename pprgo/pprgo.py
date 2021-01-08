@@ -40,7 +40,8 @@ class PPRGo(nn.Module):
                  hidden_size: int,
                  nlayers: int,
                  dropout: float,
-                 aggr: str = "sum"):
+                 aggr: str = "sum",
+                 **kwargs):
         super().__init__()
         self.mlp = PPRGoMLP(num_features, num_classes,
                             hidden_size, nlayers, dropout)
@@ -79,7 +80,7 @@ class RobustPPRGo(nn.Module):
                  nlayers: int,
                  dropout: float,
                  mean='soft_k_medoid',
-                 mean_kwargs: Dict[str, Any] = dict(k=64,
+                 mean_kwargs: Dict[str, Any] = dict(k=32,
                                                     temperature=1.0,
                                                     with_weight_correction=True),
                  **kwargs):
@@ -90,11 +91,11 @@ class RobustPPRGo(nn.Module):
                             hidden_size, nlayers, dropout)
 
     def forward(self,
-                X: torch.Tensor,
+                X: SparseTensor,
                 ppr_scores: SparseTensor):
         """
         Parameters:
-            X: torch.Tensor of shape (num_ppr_nodes, num_features)
+            X: torch_sparse.SparseTensor of shape (num_ppr_nodes, num_features)
                 The node features of all neighboring from nodes of the ppr_matrix (training nodes)
             ppr_matrix: torch_sparse.SparseTensor of shape (ppr_num_nonzeros, num_features)
                 The node features of all neighboring nodes of the training nodes in
@@ -106,7 +107,18 @@ class RobustPPRGo(nn.Module):
         """
         # logits of shape (num_batch_nodes, num_classes)
         logits = self.mlp(X)
-        propagated_logits = self._mean(ppr_scores,
-                                       logits,
-                                       **self._mean_kwargs)
-        return propagated_logits
+
+        if "k" in self._mean_kwargs.keys() and "with_weight_correction" in self._mean_kwargs.keys():
+            # `n` less than `k` and `with_weight_correction` is not implemented
+            # so we need to make sure we set with_weight_correction to false if n less than k
+            if self._mean_kwargs["k"] > X.size(0):
+                print("no with_weight_correction")
+                return self._mean(ppr_scores,
+                                  logits,
+                                  # we can not manipluate self._mean_kwargs because this would affect
+                                  # the next call to forward, so we do it this way
+                                  with_weight_correction=False,
+                                  ** {k: v for k, v in self._mean_kwargs.items() if k != "with_weight_correction"})
+        return self._mean(ppr_scores,
+                          logits,
+                          **self._mean_kwargs)
