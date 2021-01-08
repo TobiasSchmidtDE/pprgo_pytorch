@@ -1,4 +1,5 @@
-data_file: data/reddit.npz  # Path to the .npz data file
+model_class: 'RobustPPRGo'
+data_file: data/cora_ml.npz  # Path to the .npz data file
 split_seed: 0               # Seed for splitting the dataset into train/val/test
 ntrain_div_classes: 20      # Number of training nodes divided by number of classes
 attr_normalization: None    # Attribute normalization. Not used in the paper
