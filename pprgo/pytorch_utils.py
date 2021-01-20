@@ -14,8 +14,8 @@ class SparseDropout(nn.Module):
     def forward(self, input):
         value_dropped = F.dropout(input.storage.value(), self.p, self.training)
         return torch_sparse.SparseTensor(
-                row=input.storage.row(), rowptr=input.storage.rowptr(), col=input.storage.col(),
-                value=value_dropped, sparse_sizes=input.sparse_sizes(), is_sorted=True)
+            row=input.storage.row(), rowptr=input.storage.rowptr(), col=input.storage.col(),
+            value=value_dropped, sparse_sizes=input.sparse_sizes(), is_sorted=True)
 
 
 class MixedDropout(nn.Module):
@@ -65,7 +65,7 @@ class MixedLinear(nn.Module):
 
     def extra_repr(self):
         return 'in_features={}, out_features={}, bias={}'.format(
-                self.in_features, self.out_features, self.bias is not None)
+            self.in_features, self.out_features, self.bias is not None)
 
 
 def matrix_to_torch(X):

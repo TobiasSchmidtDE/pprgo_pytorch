@@ -10,7 +10,6 @@ from pprgo.pprgo import PPRGo, RobustPPRGo
 from pprgo.train import train
 from pprgo.predict import predict_power_iter, predict_batched
 from pprgo.dataset import PPRDataset, RobustPPRDataset
-from pprgo.pytorch_utils import matrix_to_torch
 
 ex = Experiment()
 seml.setup_logger(ex)
@@ -167,8 +166,8 @@ def run(model_class, data_dir, data_fname, split_seed, ntrain_div_classes, attr_
     time_inference_prediction = None
 
     start = time.time()
-    # the power iteration prediction method does not scale well
-    # make sure it's only used with relatively small graphs
+    # the power iteration prediction method is for more efficient predictions
+    # is only implemented for PPRGo, not RobustPPRGo
     if isinstance(model, PPRGo):
         predictions, time_logits, time_propagation = predict_power_iter(
             model=model,

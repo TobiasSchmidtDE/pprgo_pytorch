@@ -65,12 +65,6 @@ def train(model, train_set, val_set, lr, weight_decay,
     for epoch in range(max_epochs):
         for xbs, yb in train_loader:
             xbs, yb = [xb.to(device) for xb in xbs], yb.to(device)
-            val_loss, val_ncorr = run_batch(
-                model, xbs, yb, None, train=False)
-            val_acc = val_ncorr // (batch_mult_val * batch_size)
-
-            loss_hist['val'].append(val_loss)
-            acc_hist['val'].append(val_acc)
 
             loss_batch, ncorr_batch = run_batch(
                 model, xbs, yb, optimizer, train=True)
@@ -96,6 +90,13 @@ def train(model, train_set, val_set, lr, weight_decay,
                     rnd_idx = np.random.choice(len(val_set))[
                         :batch_mult_val * batch_size]
                     xbs, yb = val_set[rnd_idx]
+
+                    val_loss, val_ncorr = run_batch(
+                        model, xbs, yb, None, train=False)
+                    val_acc = val_ncorr // (batch_mult_val * batch_size)
+
+                    loss_hist['val'].append(val_loss)
+                    acc_hist['val'].append(val_acc)
 
                     if ex is not None:
                         if ex.current_run is not None:
