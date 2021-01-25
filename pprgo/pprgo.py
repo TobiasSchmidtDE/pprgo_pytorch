@@ -1,11 +1,13 @@
-from rgnn_at_scale.aggregation import ROBUST_MEANS, chunked_message_and_aggregate
-from .pytorch_utils import MixedDropout, MixedLinear
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_sparse import SparseTensor
 from torch_scatter import scatter
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
+from rgnn_at_scale.aggregation import ROBUST_MEANS
+
+from .pytorch_utils import MixedDropout, MixedLinear
 
 
 class PPRGoMLP(nn.Module):
@@ -14,23 +16,57 @@ class PPRGoMLP(nn.Module):
                  num_classes: int,
                  hidden_size: int,
                  nlayers: int,
-                 dropout: float):
+                 dropout: float,
+                 batch_norm: bool = False):
         super().__init__()
+        self.use_batch_norm = batch_norm
 
-        fcs = [MixedLinear(num_features, hidden_size, bias=False)]
+        # fcs = [MixedLinear(num_features, hidden_size, bias=False)]
+        # self.bns = [nn.BatchNorm1d(hidden_size)]
+
+        # for i in range(nlayers - 2):
+        #     fcs.append(nn.Linear(hidden_size, hidden_size, bias=False))
+        #     self.bns.append(nn.BatchNorm1d(hidden_size))
+
+        # fcs.append(nn.Linear(hidden_size, num_classes, bias=False))
+        # self.fcs = nn.ModuleList(fcs)
+
+        # self.drop = MixedDropout(dropout)
+
+        layers = [MixedLinear(num_features, hidden_size, bias=False)]
+        layers.append(nn.BatchNorm1d(hidden_size))
         for i in range(nlayers - 2):
-            fcs.append(nn.Linear(hidden_size, hidden_size, bias=False))
-        fcs.append(nn.Linear(hidden_size, num_classes, bias=False))
-        self.fcs = nn.ModuleList(fcs)
+            layers.append(nn.ReLU())
+            layers.append(MixedDropout(dropout))
+            layers.append(nn.Linear(hidden_size, hidden_size, bias=False))
+            layers.append(nn.BatchNorm1d(hidden_size))
 
-        self.drop = MixedDropout(dropout)
+        layers.append(nn.ReLU())
+        layers.append(MixedDropout(dropout))
+        layers.append(nn.Linear(hidden_size, num_classes, bias=False))
+
+        self.layers = nn.Sequential(*layers)
 
     def forward(self, X):
-        embs = self.drop(X)
-        embs = self.fcs[0](embs)
-        for fc in self.fcs[1:]:
-            embs = fc(self.drop(F.relu(embs)))
+        # embs = self.fcs[0](X)
+
+        # for i, fc in enumerate(self.fcs[1:]):
+        #     if self.use_batch_norm:
+        #         embs = self.bns[i](embs)
+        #     embs = F.relu(embs)
+        #     embs = self.drop(embs)
+        #     embs = fc(embs)
+        embs = self.layers(X)
         return embs
+
+    def reset_parameters(self):
+        self.layers.reset_parameters()
+        # for fc in self.fcs:
+        #     fc.reset_parameters()
+
+        # if self.batch_norm:
+        #     for bn in self.bns:
+        #         bn.reset_parameters()
 
 
 class PPRGo(nn.Module):
@@ -40,11 +76,12 @@ class PPRGo(nn.Module):
                  hidden_size: int,
                  nlayers: int,
                  dropout: float,
+                 batch_norm: bool = False,
                  aggr: str = "sum",
                  **kwargs):
         super().__init__()
         self.mlp = PPRGoMLP(num_features, num_classes,
-                            hidden_size, nlayers, dropout)
+                            hidden_size, nlayers, dropout, batch_norm)
         self.aggr = aggr
 
     def forward(self,
@@ -79,6 +116,7 @@ class RobustPPRGo(nn.Module):
                  hidden_size: int,
                  nlayers: int,
                  dropout: float,
+                 batch_norm: bool = False,
                  mean='soft_k_medoid',
                  mean_kwargs: Dict[str, Any] = dict(k=32,
                                                     temperature=1.0,
@@ -88,7 +126,7 @@ class RobustPPRGo(nn.Module):
         self._mean = ROBUST_MEANS[mean]
         self._mean_kwargs = mean_kwargs
         self.mlp = PPRGoMLP(num_features, num_classes,
-                            hidden_size, nlayers, dropout)
+                            hidden_size, nlayers, dropout, batch_norm)
 
     def forward(self,
                 X: SparseTensor,
