@@ -21,25 +21,16 @@ class PPRGoMLP(nn.Module):
         super().__init__()
         self.use_batch_norm = batch_norm
 
-        # fcs = [MixedLinear(num_features, hidden_size, bias=False)]
-        # self.bns = [nn.BatchNorm1d(hidden_size)]
-
-        # for i in range(nlayers - 2):
-        #     fcs.append(nn.Linear(hidden_size, hidden_size, bias=False))
-        #     self.bns.append(nn.BatchNorm1d(hidden_size))
-
-        # fcs.append(nn.Linear(hidden_size, num_classes, bias=False))
-        # self.fcs = nn.ModuleList(fcs)
-
-        # self.drop = MixedDropout(dropout)
-
         layers = [MixedLinear(num_features, hidden_size, bias=False)]
-        layers.append(nn.BatchNorm1d(hidden_size))
+        if self.use_batch_norm:
+            layers.append(nn.BatchNorm1d(hidden_size))
+
         for i in range(nlayers - 2):
             layers.append(nn.ReLU())
             layers.append(MixedDropout(dropout))
             layers.append(nn.Linear(hidden_size, hidden_size, bias=False))
-            layers.append(nn.BatchNorm1d(hidden_size))
+            if self.use_batch_norm:
+                layers.append(nn.BatchNorm1d(hidden_size))
 
         layers.append(nn.ReLU())
         layers.append(MixedDropout(dropout))
@@ -48,25 +39,12 @@ class PPRGoMLP(nn.Module):
         self.layers = nn.Sequential(*layers)
 
     def forward(self, X):
-        # embs = self.fcs[0](X)
 
-        # for i, fc in enumerate(self.fcs[1:]):
-        #     if self.use_batch_norm:
-        #         embs = self.bns[i](embs)
-        #     embs = F.relu(embs)
-        #     embs = self.drop(embs)
-        #     embs = fc(embs)
         embs = self.layers(X)
         return embs
 
     def reset_parameters(self):
         self.layers.reset_parameters()
-        # for fc in self.fcs:
-        #     fc.reset_parameters()
-
-        # if self.batch_norm:
-        #     for bn in self.bns:
-        #         bn.reset_parameters()
 
 
 class PPRGo(nn.Module):
