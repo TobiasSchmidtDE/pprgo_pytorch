@@ -123,6 +123,22 @@ class RobustPPRGo(nn.Module):
         """
         # logits of shape (num_batch_nodes, num_classes)
         logits = self.mlp(X)
+        
+        if self._mean.__name__ == 'soft_median' and ppr_scores.size(0) == 1 and 'temperature' in self._mean_kwargs:
+            c = logits.shape[1]
+            weights = ppr_scores.storage.value()
+            with torch.no_grad():
+                sort_idx = logits.argsort(0)
+                weights_cumsum = weights[sort_idx].cumsum(0)
+                median_idx = sort_idx[(weights_cumsum < weights_cumsum[-1][None, :] / 2).sum(0), torch.arange(c)]
+            median = logits[median_idx, torch.arange(c)]
+            distances = torch.norm(logits - median[None, :], dim=1) / pow(c, 1/2)
+
+            soft_weights = weights * F.softmax(-distances / self._mean_kwargs['temperature'], dim=-1)
+            soft_weights /= soft_weights.sum()
+            new_logits = (soft_weights[:, None] * weights.sum() * logits).sum(0)
+
+            return new_logits[None, :]
 
         if "k" in self._mean_kwargs.keys() and "with_weight_correction" in self._mean_kwargs.keys():
             # `n` less than `k` and `with_weight_correction` is not implemented
