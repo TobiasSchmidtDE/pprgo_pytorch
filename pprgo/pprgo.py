@@ -1,5 +1,6 @@
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -99,15 +100,26 @@ class PPRGoEmmbeddingDiffusions(nn.Module):
                  nlayers: int,
                  dropout: float,
                  batch_norm: bool = False,
+                 skip_connection=False,
                  aggr: str = "sum",
                  **kwargs):
         super().__init__()
         # TODO: rewrite PPRGoMLP such that it doesn't expect at least n_layers >= 2.
-        assert nlayers >= 4, "nlayers must be 4 or greater for this implementation to work"
-        self.mlp = PPRGoMLP(num_features, hidden_size,
-                            hidden_size, nlayers - 2, dropout, batch_norm)
+        self.skip_connection = skip_connection
+
+        layer_num_mlp = math.ceil(nlayers / 2)
+        layer_num_mlp_logits = math.floor(nlayers / 2)
+
+        if self.skip_connection:
+            assert hidden_size > num_features, "hidden size must be greater than num_features for this skip_connection implementation to work"
+            self.mlp = PPRGoMLP(num_features, hidden_size - num_features,
+                                hidden_size, layer_num_mlp, dropout, batch_norm)
+        else:
+            self.mlp = PPRGoMLP(num_features, hidden_size,
+                                hidden_size, layer_num_mlp, dropout, batch_norm)
+
         self.mlp_logits = PPRGoMLP(hidden_size, num_classes,
-                                   hidden_size, 2, dropout, batch_norm)
+                                   hidden_size, layer_num_mlp_logits, dropout, batch_norm)
         self.aggr = aggr
 
     def forward(self,
@@ -132,6 +144,10 @@ class PPRGoEmmbeddingDiffusions(nn.Module):
         embedding = self.mlp(X)
         propagated_embedding = scatter(embedding * ppr_scores[:, None], ppr_idx[:, None],
                                        dim=0, dim_size=ppr_idx[-1] + 1, reduce=self.aggr)
+        if self.skip_connection:
+            # concatenated node features and propagated node embedding on feature dimension:
+            propagated_embedding = torch.cat((X[ppr_idx.unique()], propagated_embedding), dim=-1)
+
         return self.mlp_logits(propagated_embedding)
 
 
